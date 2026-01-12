@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Sistema de Frequência de Bolsistas</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    margin: 0;
+    padding: 20px;
+}
+.container {
+    background: #fff;
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    width: 95%;
+    max-width: 1400px;
+}
+h2 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+.info {
+    color: #555;
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+.acoes {
+    margin-bottom: 15px;
+}
+button {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 5px;
+    background: #0057b8;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 5px;
+}
+button:hover {
+    background: #004494;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+th, td {
+    border: 1px solid #ccc;
+    padding: 6px;
+    text-align: center;
+}
+th {
+    background: #f0f0f0;
+}
+input[type="text"],
+input[type="date"],
+select,
+input[type="file"] {
+    width: 100%;
+    font-size: 12px;
+}
+a {
+    text-decoration: none;
+    color: #0057b8;
+}
+a:hover {
+    text-decoration: underline;
+}
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>Sistema de Frequência de Bolsistas</h2>
+<div class="info" id="infoUsuario"></div>
+<div class="acoes">
+    <button id="btnAdicionar" onclick="adicionarBolsista()">➕ Adicionar Bolsista</button>
+    <button onclick="salvar()">💾 Salvar</button>
+    <button onclick="enviarPlanilha()">📤 Enviar Planilha</button>
+</div>
+<table>
+<thead>
+<tr>
+    <th>Campus</th>
+    <th>Nome</th>
+    <th>Matrícula</th>
+    <th>Setor</th>
+    <th>Início</th>
+    <th>Fim</th>
+    <th>Email Coordenador</th>
+    <th>Jan</th><th>Fev</th><th>Mar</th><th>Abr</th>
+    <th>Mai</th><th>Jun</th><th>Jul</th><th>Ago</th>
+    <th>Set</th><th>Out</th><th>Nov</th><th>Dez</th>
+    <th>Justificativa</th>
+    <th>Arquivo</th>
+    <th>Ações</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+
+<script>
+const URL_APPS = "https://script.google.com/macros/s/AKfycbwwl6i89bMXh8TNd3Kk7iFzZuUcwOdqzLKqZ5geg2r7FIurKOoj102twjhSlXDRpsw7Fw/exec";
+
+// ========================
+// LOGIN / SESSÃO
+// ========================
+const emailUsuario = sessionStorage.getItem("coordenadorLogado");
+const tipoUsuario = (emailUsuario === "bolsatrabalho@prex.uespi.br") ? "admin" : "coordenador";
+
+if(!emailUsuario){
+    alert("Acesso inválido.");
+    window.location.href = "index.html";
+} else {
+    document.getElementById("infoUsuario").innerText =
+        `Usuário: ${emailUsuario} | Perfil: ${tipoUsuario === "admin" ? "Administrador" : "Coordenador"}`;
+}
+
+// Esconde botão de adicionar se não for admin
+if(tipoUsuario !== "admin") document.getElementById("btnAdicionar").classList.add("hidden");
+
+// ========================
+// DADOS
+// ========================
+let bolsistas = JSON.parse(localStorage.getItem("bolsistas")) || [];
+
+// ========================
+// FUNÇÕES
+// ========================
+function renderTabela(){
+    const tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+    bolsistas.forEach((b,index)=>{
+        if(tipoUsuario !== "admin" && b.coordenador !== emailUsuario) return;
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${campoTexto(b.campus,index,"campus",tipoUsuario==="admin")}</td>
+            <td>${campoTexto(b.nome,index,"nome",tipoUsuario==="admin")}</td>
+            <td>${campoTexto(b.matricula,index,"matricula",tipoUsuario==="admin")}</td>
+            <td>${campoTexto(b.setor,index,"setor",tipoUsuario==="admin")}</td>
+            <td>${campoData(b.inicio,index,"inicio",tipoUsuario==="admin")}</td>
+            <td>${campoData(b.fim,index,"fim",tipoUsuario==="admin")}</td>
+            <td>${campoTexto(b.coordenador,index,"coordenador",tipoUsuario==="admin")}</td>
+            ${mesesHTML(b,index)}
+            <td>${campoTexto(b.justificativa,index,"justificativa",true)}</td>
+            <td>${b.arquivoUrl?`<a href="${b.arquivoUrl}" target="_blank">${b.arquivoNome}</a>`:
+                `<input type="file" onchange="uploadArquivo(event, ${index})">`}</td>
+            <td>${tipoUsuario==="admin"?`<button onclick="removerBolsista(${index})">Remover</button>`:""}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    salvar();
+}
+
+function campoTexto(valor,i,campo,editavel){
+    return editavel? `<input type="text" value="${valor||''}" onchange="atualizar(${i},'${campo}',this.value)">`:valor||'';
+}
+function campoData(valor,i,campo,editavel){
+    return editavel? `<input type="date" value="${valor||''}" onchange="atualizar(${i},'${campo}',this.value)">`:valor||'';
+}
+function mesesHTML(b,i){
+    let html="";
+    const meses = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+    meses.forEach((m,mi)=>{
+        const val = b[m]||"NÃO";
+        html+=`<td>
+            <select onchange="atualizarMes(${i},'${m}',this.value)">
+                <option ${val==="SIM"?"selected":""}>SIM</option>
+                <option ${val==="NÃO"?"selected":""}>NÃO</option>
+            </select>
+        </td>`;
+    });
+    return html;
+}
+
+function atualizar(i,campo,valor){ bolsistas[i][campo]=valor; salvar(); }
+function atualizarMes(i,mes,valor){ bolsistas[i][mes]=valor; salvar(); }
+function adicionarBolsista(){
+    bolsistas.push({
+        campus:"", nome:"", matricula:"", setor:"", inicio:"", fim:"", coordenador: emailUsuario,
+        Jan:"NÃO",Fev:"NÃO",Mar:"NÃO",Abr:"NÃO",Mai:"NÃO",Jun:"NÃO",Jul:"NÃO",Ago:"NÃO",
+        Set:"NÃO",Out:"NÃO",Nov:"NÃO",Dez:"NÃO",
+        justificativa:"", arquivoBase64:"", arquivoNome:"", arquivoUrl:""
+    });
+    renderTabela();
+}
+function removerBolsista(i){ if(confirm("Remover este bolsista?")){ bolsistas.splice(i,1); renderTabela(); } }
+function salvar(){ localStorage.setItem("bolsistas",JSON.stringify(bolsistas)); }
+
+// ========================
+// UPLOAD DE ARQUIVOS
+// ========================
+function uploadArquivo(e,index){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(){
+        const base64 = reader.result.split(',')[1];
+        bolsistas[index].arquivoBase64 = base64;
+        bolsistas[index].arquivoNome = file.name;
+        // o arquivo será enviado e link criado no Apps Script
+    }
+    reader.readAsDataURL(file);
+}
+
+// ========================
+// ENVIAR PLANILHA
+// ========================
+function enviarPlanilha(){
+    const dadosEnvio = bolsistas.map(b=>{
+        return {
+            campus: b.campus, nome: b.nome, matricula: b.matricula, setor: b.setor,
+            inicio: b.inicio, fim: b.fim, coordenador: b.coordenador,
+            Jan:b.Jan||"NÃO",Fev:b.Fev||"NÃO",Mar:b.Mar||"NÃO",Abr:b.Abr||"NÃO",
+            Mai:b.Mai||"NÃO",Jun:b.Jun||"NÃO",Jul:b.Jul||"NÃO",Ago:b.Ago||"NÃO",
+            Set:b.Set||"NÃO",Out:b.Out||"NÃO",Nov:b.Nov||"NÃO",Dez:b.Dez||"NÃO",
+            justificativa:b.justificativa||"", arquivoNome:b.arquivoNome||"", arquivoBase64:b.arquivoBase64||""
+        };
+    });
+    fetch(URL_APPS,{
+        method:"POST",
+        body: JSON.stringify(dadosEnvio)
+    }).then(r=>r.json()).then(d=>{
+        if(d.status==="ok"){
+            alert("Dados enviados com sucesso!");
+            // salva o link do arquivo retornado (caso queira)
+            d.arquivos?.forEach((url,i)=> bolsistas[i].arquivoUrl = url);
+            renderTabela();
+        } else alert("Erro ao enviar: "+d.mensagem);
+    }).catch(err=>alert("Erro de conexão: "+err));
+}
+
+// ========================
+// INICIALIZA
+// ========================
+renderTabela();
+</script>
+</body>
+</html>
